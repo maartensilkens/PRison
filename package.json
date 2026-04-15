@@ -2,7 +2,7 @@
   "name": "prison",
   "displayName": "PRison",
   "description": "Your PRs are in prison. Only YOU can set them free. 🔒",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "publisher": "MaartenSilkens",
   "engines": {
     "vscode": "^1.85.0"
