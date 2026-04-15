@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import { PRPoller } from "./github/poller";
 import { BranchWatcher } from "./git/watcher";
 import { ShameStatusBar } from "./ui/statusBar";
-import { ShameTreeProvider } from "./ui/treeView";
+import { SidebarViewProvider } from "./ui/sidebarView";
 import { showShameOverlay } from "./ui/overlay";
 import { shouldShowOverlay } from "./shame/engine";
 import { ShameLevel } from "./shame/types";
@@ -10,6 +10,7 @@ import { getRandomMessage } from "./messages/memes";
 import { getConfig } from "./config";
 import { clearCache } from "./github/api";
 import { clearTokenCache } from "./github/auth";
+import { TerminalBlocker } from "./terminal/blocker";
 
 export async function activate(
   context: vscode.ExtensionContext,
@@ -20,15 +21,14 @@ export async function activate(
   const poller = new PRPoller();
   const branchWatcher = new BranchWatcher();
   const statusBar = new ShameStatusBar();
-  const treeProvider = new ShameTreeProvider();
-
-  context.subscriptions.push(poller, branchWatcher, statusBar);
-
-  const treeView = vscode.window.createTreeView("prison.shameTree", {
-    treeDataProvider: treeProvider,
-    showCollapseAll: false,
-  });
-  context.subscriptions.push(treeView);
+  const sidebarProvider = new SidebarViewProvider();
+  context.subscriptions.push(poller, branchWatcher, statusBar, sidebarProvider);
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(
+      "prison.sidebar",
+      sidebarProvider,
+    ),
+  );
 
   context.subscriptions.push(
     vscode.commands.registerCommand("prison.showOverlay", async () => {
@@ -55,11 +55,12 @@ export async function activate(
     }),
 
     vscode.commands.registerCommand("prison.openPR", (url: string) => {
-      vscode.env.openExternal(vscode.Uri.parse(url));
+      if (/^https:\/\/github\.com\//.test(url)) {
+        vscode.env.openExternal(vscode.Uri.parse(url));
+      }
     }),
 
     vscode.commands.registerCommand("prison.demo", async () => {
-      const { ShameLevel } = await import("./shame/types");
       const mockReport = {
         myOpenPRs: [
           {
@@ -72,6 +73,7 @@ export async function activate(
             unresolvedThreads: 7,
             isDraft: false,
             reviewState: "CHANGES_REQUESTED" as const,
+            approvals: 0,
           },
           {
             number: 138,
@@ -83,6 +85,7 @@ export async function activate(
             unresolvedThreads: 2,
             isDraft: false,
             reviewState: "PENDING" as const,
+            approvals: 1,
           },
         ],
         pendingReviews: [
@@ -95,11 +98,13 @@ export async function activate(
             repo: "example/repo",
             unresolvedThreads: 0,
             isDraft: false,
+            reviewState: "PENDING" as const,
+            approvals: 0,
           },
         ],
-        totalUnresolvedThreads: 9,
-        oldestPRAgeDays: 8,
-        shameLevel: ShameLevel.CRITICAL,
+        attentionCount: 3,
+        reviewedByMe: [],
+        shameLevel: ShameLevel.SHAMED,
         updatedAt: new Date(),
       };
       await showShameOverlay(context, mockReport);
@@ -108,16 +113,31 @@ export async function activate(
 
   poller.onShameUpdated((report) => {
     statusBar.update(report);
-    treeProvider.update(report);
+    sidebarProvider.update(report);
   });
+
+  poller.onPollError((err) => {
+    if (err.kind === "authRequired") sidebarProvider.setAuthRequired();
+    else if (err.kind === "noRepos") sidebarProvider.setNoRepos();
+    else sidebarProvider.setError(err.message ?? "Unknown error");
+  });
+
+  if (config.blockTerminal) {
+    const blocker = new TerminalBlocker(
+      () => poller.currentReport?.shameLevel ?? ShameLevel.CLEAN,
+      () => {
+        const report = poller.currentReport;
+        if (report) showShameOverlay(context, report);
+      },
+    );
+    context.subscriptions.push(blocker);
+  }
 
   branchWatcher.onBranchChange(async () => {
     if (!config.overlayOnBranchChange) return;
-
     const report = poller.currentReport;
     if (!report) return;
-
-    if (shouldShowOverlay(report, config.shameThreshold)) {
+    if (shouldShowOverlay(report)) {
       await showShameOverlay(context, report);
     }
   });
@@ -130,22 +150,8 @@ export async function activate(
     if (!firstPoll) return;
     firstPoll = false;
 
-    if (
-      config.overlayOnStartup &&
-      shouldShowOverlay(report, config.shameThreshold)
-    ) {
-      if (report.shameLevel >= ShameLevel.SEVERE) {
-        await showShameOverlay(context, report);
-      } else {
-        const message = getRandomMessage("startup", { report });
-        vscode.window
-          .showWarningMessage(`PRison: ${message}`, "Show Me", "Dismiss")
-          .then((choice) => {
-            if (choice === "Show Me") {
-              showShameOverlay(context, report);
-            }
-          });
-      }
+    if (config.overlayOnStartup && shouldShowOverlay(report)) {
+      await showShameOverlay(context, report);
     } else if (report.shameLevel === ShameLevel.CLEAN) {
       const message = getRandomMessage("boss_slain", { report });
       vscode.window.showInformationMessage(`PRison: ${message}`);

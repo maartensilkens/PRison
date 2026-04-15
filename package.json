@@ -3,40 +3,73 @@
   "displayName": "PRison",
   "description": "Your PRs are in prison. Only YOU can set them free. 🔒",
   "version": "0.1.0",
-  "publisher": "prison-dev",
-  "engines": { "vscode": "^1.85.0" },
-  "categories": ["Other"],
+  "publisher": "MaartenSilkens",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
   "icon": "media/icon.png",
-  "galleryBanner": { "color": "#0d0d0d", "theme": "dark" },
-  "keywords": ["github", "pull request", "code review", "shame", "meme"],
-  "repository": { "type": "git", "url": "https://github.com/prison-dev/prison" },
+  "galleryBanner": {
+    "color": "#0d0d0d",
+    "theme": "dark"
+  },
+  "keywords": [
+    "github",
+    "pull request",
+    "code review",
+    "shame",
+    "meme"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/prison-dev/prison"
+  },
   "main": "./dist/extension.js",
-  "activationEvents": ["onStartupFinished"],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "contributes": {
     "commands": [
-      { "command": "prison.showOverlay", "title": "PRison: Show Shame Overlay" },
-      { "command": "prison.checkPRs", "title": "PRison: Check PRs Now" },
-      { "command": "prison.clearCache", "title": "PRison: Clear Cache" },
-      { "command": "prison.openPR", "title": "Open PR in Browser" },
-      { "command": "prison.demo", "title": "PRison: Demo Overlay (no GitHub needed)" }
+      {
+        "command": "prison.showOverlay",
+        "title": "PRison: Show Shame Overlay"
+      },
+      {
+        "command": "prison.checkPRs",
+        "title": "PRison: Check PRs Now"
+      },
+      {
+        "command": "prison.clearCache",
+        "title": "PRison: Clear Cache"
+      },
+      {
+        "command": "prison.openPR",
+        "title": "Open PR in Browser",
+        "icon": "$(link-external)"
+      },
+      {
+        "command": "prison.demo",
+        "title": "PRison: Demo Overlay (no GitHub needed)"
+      }
     ],
     "viewsContainers": {
-      "activitybar": [{
-        "id": "prison-sidebar",
-        "title": "PRison",
-        "icon": "media/sidebar-icon.svg"
-      }]
+      "activitybar": [
+        {
+          "id": "prison-sidebar",
+          "title": "PRison",
+          "icon": "media/sidebar-icon.svg"
+        }
+      ]
     },
     "views": {
-      "prison-sidebar": [{
-        "id": "prison.shameTree",
-        "name": "PR Shame Board",
-        "icon": "media/sidebar-icon.svg"
-      }]
-    },
-    "menus": {
-      "view/item/context": [
-        { "command": "prison.openPR", "when": "view == prison.shameTree && viewItem == prItem" }
+      "prison-sidebar": [
+        {
+          "type": "webview",
+          "id": "prison.sidebar",
+          "name": "PRison"
+        }
       ]
     },
     "configuration": {
@@ -44,7 +77,9 @@
       "properties": {
         "prison.repos": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "default": [],
           "description": "GitHub repos to monitor (e.g. ['org/repo1', 'org/repo2']). Leave empty to auto-detect from git remote."
         },
@@ -55,16 +90,10 @@
           "maximum": 60,
           "description": "How often to check GitHub for PR updates (minutes)"
         },
-        "prison.shameThreshold": {
-          "type": "string",
-          "enum": ["mild", "moderate", "severe"],
-          "default": "mild",
-          "description": "Minimum shame level to trigger the overlay"
-        },
         "prison.enabled": {
           "type": "boolean",
           "default": true,
-          "description": "Enable/disable PRison entirely"
+          "description": "Disable all shame overlays and terminal blocking. The sidebar still works."
         },
         "prison.overlayOnStartup": {
           "type": "boolean",
@@ -75,6 +104,22 @@
           "type": "boolean",
           "default": true,
           "description": "Show shame overlay when checking out or creating a branch"
+        },
+        "prison.soundEnabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Play a meme sound effect when the shame overlay appears 🔊"
+        },
+        "prison.blockTerminal": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show shame overlay every time you open a terminal while you have 2+ PRs needing attention 💀"
+        },
+        "prison.requiredApprovals": {
+          "type": "number",
+          "default": 2,
+          "minimum": 1,
+          "description": "Number of approvals required before a PR is considered 'done' ✅"
         }
       }
     }
@@ -84,9 +129,6 @@
     "watch": "webpack --mode development --watch",
     "package": "webpack --mode production && vsce package",
     "lint": "eslint src --ext ts"
-  },
-  "dependencies": {
-    "@octokit/rest": "^20.1.1"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

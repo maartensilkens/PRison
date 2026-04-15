@@ -3,7 +3,9 @@ import * as path from "path";
 import * as fs from "fs";
 import { ShameReport } from "../shame/types";
 import { getRandomMessage } from "../messages/memes";
-import { getPRAgeDays } from "../github/api";
+import { playShameSound } from "../audio/player";
+import { ownPRsNeedingAction } from "../shame/engine";
+import { getNonce } from "../utils/nonce";
 
 let activePanel: vscode.WebviewPanel | null = null;
 
@@ -11,9 +13,12 @@ export async function showShameOverlay(
   context: vscode.ExtensionContext,
   report: ShameReport,
 ): Promise<void> {
+  // Play sound immediately via OS — no webview delay
+  playShameSound(context.extensionPath);
+
   if (activePanel) {
     activePanel.reveal(vscode.ViewColumn.One);
-    sendOverlayContent(activePanel, report);
+    updateOverlayContent(activePanel, report);
     return;
   }
 
@@ -30,79 +35,60 @@ export async function showShameOverlay(
 
   activePanel = panel;
 
-  const htmlPath = path.join(
-    context.extensionPath,
-    "src",
-    "ui",
-    "webview",
-    "overlay.html",
+  const nonce = getNonce();
+  const rawHtml = fs.readFileSync(
+    path.join(context.extensionPath, "media", "overlay.html"),
+    "utf8",
   );
-  const html = fs.readFileSync(htmlPath, "utf8");
-  panel.webview.html = html;
+  panel.webview.html = rawHtml.split("{{NONCE}}").join(nonce);
 
   panel.webview.onDidReceiveMessage(
     (message) => {
-      if (message.type === "dismiss") {
-        panel.dispose();
-      }
+      if (message.type === "dismiss") panel.dispose();
     },
     undefined,
     context.subscriptions,
   );
 
+  const updateTimer = setTimeout(
+    () => updateOverlayContent(panel, report),
+    300,
+  );
   panel.onDidDispose(() => {
+    clearTimeout(updateTimer);
     activePanel = null;
   });
-
-  // Small delay to let webview initialize before sending content
-  setTimeout(() => {
-    sendOverlayContent(panel, report);
-  }, 300);
 }
 
-function sendOverlayContent(
+function updateOverlayContent(
   panel: vscode.WebviewPanel,
   report: ShameReport,
 ): void {
-  const message = getRandomMessage("branch_checkout", { report });
-  const details = buildShameDetails(report);
-
   panel.webview.postMessage({
     type: "init",
-    message,
-    details,
+    message: getRandomMessage("branch_checkout", { report }),
+    details: buildShameDetails(report),
   });
 }
 
 function buildShameDetails(report: ShameReport): string {
   const parts: string[] = [];
-
-  if (report.myOpenPRs.length > 0) {
+  const actionRequired = ownPRsNeedingAction(report.myOpenPRs);
+  if (actionRequired.length > 0)
     parts.push(
-      `${report.myOpenPRs.length} open PR${report.myOpenPRs.length !== 1 ? "s" : ""}`,
+      `${actionRequired.length} own PR${actionRequired.length !== 1 ? "s" : ""} need action`,
     );
-  }
-  if (report.totalUnresolvedThreads > 0) {
-    parts.push(
-      `${report.totalUnresolvedThreads} unresolved thread${report.totalUnresolvedThreads !== 1 ? "s" : ""}`,
-    );
-  }
   if (report.pendingReviews.length > 0) {
-    parts.push(
-      `${report.pendingReviews.length} review${report.pendingReviews.length !== 1 ? "s" : ""} pending`,
+    const reviewableNow = report.pendingReviews.filter(
+      (pr) => pr.unresolvedThreads === 0,
     );
+    if (reviewableNow.length > 0)
+      parts.push(
+        `${reviewableNow.length} review${reviewableNow.length !== 1 ? "s" : ""} pending`,
+      );
   }
-  if (report.oldestPRAgeDays > 0) {
-    parts.push(
-      `oldest: ${report.oldestPRAgeDays} day${report.oldestPRAgeDays !== 1 ? "s" : ""}`,
-    );
-  }
-
   return parts.join(" · ");
 }
-
-// Suppress unused warning — getPRAgeDays is imported for potential future use in overlay detail logic
-void getPRAgeDays;
 
 export function disposeOverlay(): void {
   activePanel?.dispose();

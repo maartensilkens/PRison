@@ -1,6 +1,7 @@
 import { PRInfo, RepoConfig } from "./types";
 
 const BASE_URL = "https://api.github.com";
+const GRAPHQL_URL = "https://api.github.com/graphql";
 const CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutes
 
 interface CacheEntry<T> {
@@ -9,6 +10,7 @@ interface CacheEntry<T> {
 }
 
 const cache = new Map<string, CacheEntry<unknown>>();
+const inFlight = new Map<string, Promise<unknown>>();
 
 function getCached<T>(key: string): T | null {
   const entry = cache.get(key) as CacheEntry<T> | undefined;
@@ -26,6 +28,15 @@ function setCached<T>(key: string, data: T): void {
 
 export function clearCache(): void {
   cache.clear();
+  inFlight.clear();
+}
+
+async function deduped<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const existing = inFlight.get(key) as Promise<T> | undefined;
+  if (existing) return existing;
+  const promise = fn().finally(() => inFlight.delete(key));
+  inFlight.set(key, promise as Promise<unknown>);
+  return promise;
 }
 
 async function ghFetch<T>(path: string, token: string): Promise<T> {
@@ -42,6 +53,153 @@ async function ghFetch<T>(path: string, token: string): Promise<T> {
     );
   }
   return response.json() as Promise<T>;
+}
+
+async function ghGraphQL<T>(
+  query: string,
+  variables: Record<string, unknown>,
+  token: string,
+): Promise<T> {
+  const response = await fetch(GRAPHQL_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `bearer ${token}`,
+      "Content-Type": "application/json",
+      "User-Agent": "PRison-VSCode-Extension",
+    },
+    body: JSON.stringify({ query, variables }),
+  });
+  if (!response.ok) {
+    throw new Error(
+      `GitHub GraphQL error: ${response.status} ${response.statusText}`,
+    );
+  }
+  const json = (await response.json()) as { data: T; errors?: unknown[] };
+  if (json.errors) {
+    throw new Error(`GitHub GraphQL errors: ${JSON.stringify(json.errors)}`);
+  }
+  return json.data;
+}
+
+interface PRGraphQLData {
+  unresolvedThreads: number;
+  approvals: number;
+  reviewState: "APPROVED" | "CHANGES_REQUESTED" | "PENDING";
+  reviews: Array<{ reviewer: string; state: string }>;
+}
+
+const GRAPHQL_PR_QUERY = `
+  query($owner: String!, $repo: String!, $number: Int!) {
+    repository(owner: $owner, name: $repo) {
+      pullRequest(number: $number) {
+        reviewThreads(first: 100) {
+          nodes { isResolved }
+        }
+        reviews(first: 100) {
+          nodes {
+            state
+            submittedAt
+            author { login }
+          }
+        }
+      }
+    }
+  }
+`;
+
+async function getPRGraphQLData(
+  repo: RepoConfig,
+  prNumber: number,
+  token: string,
+): Promise<PRGraphQLData> {
+  const key = `graphql:${repo.owner}/${repo.repo}:${prNumber}`;
+  const cached = getCached<PRGraphQLData>(key);
+  if (cached !== null) return cached;
+
+  return deduped(key, async () => {
+    try {
+      interface GQLResponse {
+        repository: {
+          pullRequest: {
+            reviewThreads: { nodes: { isResolved: boolean }[] };
+            reviews: {
+              nodes: Array<{
+                state: string;
+                submittedAt: string;
+                author: { login: string } | null;
+              }>;
+            };
+          };
+        };
+      }
+
+      const data = await ghGraphQL<GQLResponse>(
+        GRAPHQL_PR_QUERY,
+        { owner: repo.owner, repo: repo.repo, number: prNumber },
+        token,
+      );
+
+      const pr = data.repository.pullRequest;
+      const unresolvedThreads = pr.reviewThreads.nodes.filter(
+        (t) => !t.isResolved,
+      ).length;
+
+      // Sort by submission time ascending, then compute latest decision per reviewer
+      const sorted = [...pr.reviews.nodes].sort(
+        (a, b) =>
+          new Date(a.submittedAt).getTime() - new Date(b.submittedAt).getTime(),
+      );
+
+      const latestByUser = new Map<string, string>();
+      for (const review of sorted) {
+        if (!review.author) continue; // deleted account
+        const login = review.author.login;
+        switch (review.state) {
+          case "APPROVED":
+          case "CHANGES_REQUESTED":
+            latestByUser.set(login, review.state);
+            break;
+          case "DISMISSED":
+            latestByUser.delete(login); // dismissed clears the decision
+            break;
+          // COMMENTED: no change to reviewer's decision state
+        }
+      }
+
+      const approvals = Array.from(latestByUser.values()).filter(
+        (s) => s === "APPROVED",
+      ).length;
+      const hasChangesRequested = Array.from(latestByUser.values()).some(
+        (s) => s === "CHANGES_REQUESTED",
+      );
+      const reviewState: "APPROVED" | "CHANGES_REQUESTED" | "PENDING" =
+        hasChangesRequested
+          ? "CHANGES_REQUESTED"
+          : approvals > 0
+            ? "APPROVED"
+            : "PENDING";
+
+      const reviews = Array.from(latestByUser.entries()).map(
+        ([reviewer, state]) => ({ reviewer, state }),
+      );
+
+      const result: PRGraphQLData = {
+        unresolvedThreads,
+        approvals,
+        reviewState,
+        reviews,
+      };
+      setCached(key, result);
+      return result;
+    } catch {
+      return {
+        unresolvedThreads: 0,
+        approvals: 0,
+        reviewState: "PENDING",
+        reviews: [],
+      };
+    }
+  });
 }
 
 export async function getMyOpenPRs(
@@ -71,8 +229,8 @@ export async function getMyOpenPRs(
 
   const prInfos: PRInfo[] = await Promise.all(
     myPRs.map(async (pr) => {
-      const threads = await getUnresolvedThreadCount(repo, pr.number, token);
-      const reviewState = await getMyPRReviewState(repo, pr.number, token);
+      const { unresolvedThreads, approvals, reviewState } =
+        await getPRGraphQLData(repo, pr.number, token);
       return {
         number: pr.number,
         title: pr.title,
@@ -80,7 +238,8 @@ export async function getMyOpenPRs(
         author: pr.user.login,
         createdAt: new Date(pr.created_at),
         repo: `${repo.owner}/${repo.repo}`,
-        unresolvedThreads: threads,
+        unresolvedThreads,
+        approvals,
         isDraft: pr.draft,
         reviewState,
       };
@@ -91,13 +250,18 @@ export async function getMyOpenPRs(
   return prInfos;
 }
 
-export async function getMyPendingReviews(
+interface EnrichedOtherPR extends PRInfo {
+  reviewedByMe: boolean;
+  myReviewState?: "APPROVED" | "CHANGES_REQUESTED";
+}
+
+async function fetchEnrichedOtherPRs(
   repo: RepoConfig,
   username: string,
   token: string,
-): Promise<PRInfo[]> {
-  const key = `pending-reviews:${repo.owner}/${repo.repo}:${username}`;
-  const cached = getCached<PRInfo[]>(key);
+): Promise<EnrichedOtherPR[]> {
+  const key = `other-prs:${repo.owner}/${repo.repo}:${username}`;
+  const cached = getCached<EnrichedOtherPR[]>(key);
   if (cached) return cached;
 
   interface GhPR {
@@ -107,7 +271,6 @@ export async function getMyPendingReviews(
     user: { login: string };
     created_at: string;
     draft: boolean;
-    requested_reviewers: { login: string }[];
   }
 
   const prs = await ghFetch<GhPR[]>(
@@ -115,80 +278,68 @@ export async function getMyPendingReviews(
     token,
   );
 
-  const reviewRequested = prs.filter(
-    (pr) =>
-      pr.user.login !== username &&
-      pr.requested_reviewers.some((r) => r.login === username),
+  const candidates = prs.filter((pr) => pr.user.login !== username);
+
+  const result: EnrichedOtherPR[] = await Promise.all(
+    candidates.map(async (pr) => {
+      const { unresolvedThreads, approvals, reviewState, reviews } =
+        await getPRGraphQLData(repo, pr.number, token);
+
+      const reviewedByMe = reviews.some(
+        (r) => r.reviewer === username && r.state !== "COMMENTED",
+      );
+      const myState = reviews.find((r) => r.reviewer === username)?.state;
+      const myReviewState =
+        myState === "APPROVED" || myState === "CHANGES_REQUESTED"
+          ? myState
+          : undefined;
+
+      return {
+        number: pr.number,
+        title: pr.title,
+        url: pr.html_url,
+        author: pr.user.login,
+        createdAt: new Date(pr.created_at),
+        repo: `${repo.owner}/${repo.repo}`,
+        unresolvedThreads,
+        approvals,
+        isDraft: pr.draft,
+        reviewState,
+        reviewedByMe,
+        myReviewState,
+      };
+    }),
   );
 
-  const prInfos: PRInfo[] = reviewRequested.map((pr) => ({
-    number: pr.number,
-    title: pr.title,
-    url: pr.html_url,
-    author: pr.user.login,
-    createdAt: new Date(pr.created_at),
-    repo: `${repo.owner}/${repo.repo}`,
-    unresolvedThreads: 0,
-    isDraft: pr.draft,
-  }));
-
-  setCached(key, prInfos);
-  return prInfos;
+  setCached(key, result);
+  return result;
 }
 
-async function getUnresolvedThreadCount(
+export async function getMyPendingReviews(
   repo: RepoConfig,
-  prNumber: number,
+  username: string,
   token: string,
-): Promise<number> {
-  const key = `threads:${repo.owner}/${repo.repo}:${prNumber}`;
-  const cached = getCached<number>(key);
-  if (cached !== null) return cached;
-
-  try {
-    interface GhReviewComment {
-      in_reply_to_id?: number;
-      pull_request_review_id: number | null;
-    }
-    const comments = await ghFetch<GhReviewComment[]>(
-      `/repos/${repo.owner}/${repo.repo}/pulls/${prNumber}/comments?per_page=100`,
-      token,
-    );
-    // Count top-level comments (no in_reply_to_id) as thread starts.
-    // Approximation — GitHub's review thread resolution isn't in REST v3.
-    const topLevel = comments.filter((c) => !c.in_reply_to_id).length;
-    setCached(key, topLevel);
-    return topLevel;
-  } catch {
-    return 0;
-  }
+  requiredApprovals: number,
+): Promise<PRInfo[]> {
+  const all = await fetchEnrichedOtherPRs(repo, username, token);
+  return all
+    .filter((pr) => !pr.reviewedByMe && pr.approvals < requiredApprovals)
+    .map(({ reviewedByMe: _r, ...rest }) => rest);
 }
 
-async function getMyPRReviewState(
+export async function getAlreadyReviewedPRs(
   repo: RepoConfig,
-  prNumber: number,
+  username: string,
   token: string,
-): Promise<"APPROVED" | "CHANGES_REQUESTED" | "PENDING"> {
-  try {
-    interface GhReview {
-      state: string;
-      submitted_at: string;
-    }
-    const reviews = await ghFetch<GhReview[]>(
-      `/repos/${repo.owner}/${repo.repo}/pulls/${prNumber}/reviews?per_page=100`,
-      token,
-    );
-    if (reviews.length === 0) return "PENDING";
-    const latest = reviews[reviews.length - 1];
-    if (latest.state === "APPROVED") return "APPROVED";
-    if (latest.state === "CHANGES_REQUESTED") return "CHANGES_REQUESTED";
-    return "PENDING";
-  } catch {
-    return "PENDING";
-  }
+  requiredApprovals: number,
+): Promise<PRInfo[]> {
+  const all = await fetchEnrichedOtherPRs(repo, username, token);
+  return all
+    .filter((pr) => pr.reviewedByMe || pr.approvals >= requiredApprovals)
+    .map(({ reviewedByMe: _r, ...rest }) => rest);
 }
 
-export function getPRAgeDays(pr: PRInfo): number {
+export function getPRAgeDays(pr: { createdAt: Date }): number {
   return Math.floor(
     (Date.now() - pr.createdAt.getTime()) / (1000 * 60 * 60 * 24),
   );

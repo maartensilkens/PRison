@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com https://fonts.gstatic.com; font-src https://fonts.gstatic.com; script-src 'nonce-{{NONCE}}'; media-src data: blob:;"
+    />
+    <title>PRison</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&family=Cinzel+Decorative:wght@400;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        width: 100vw;
+        height: 100vh;
+        background: #000;
+        overflow: hidden;
+        cursor: default;
+        user-select: none;
+      }
+
+      .overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.96);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 2.5rem;
+        z-index: 9999;
+      }
+
+      /* Vignette effect */
+      .overlay::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        background: radial-gradient(
+          ellipse at center,
+          transparent 30%,
+          rgba(0, 0, 0, 0.8) 100%
+        );
+        pointer-events: none;
+        z-index: 1;
+      }
+
+      .content {
+        position: relative;
+        z-index: 2;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2rem;
+        animation: fadeSlideIn 1.6s ease-out forwards;
+        opacity: 0;
+      }
+
+      @keyframes fadeSlideIn {
+        0% {
+          opacity: 0;
+          transform: translateY(20px) scale(0.97);
+          filter: blur(6px);
+        }
+        40% {
+          opacity: 0.8;
+          filter: blur(1px);
+        }
+        100% {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+          filter: blur(0);
+        }
+      }
+
+      .label-top {
+        font-family: "Cinzel", serif;
+        font-size: 0.9rem;
+        font-weight: 400;
+        letter-spacing: 0.4em;
+        color: #8b0000;
+        text-transform: uppercase;
+        opacity: 0.8;
+      }
+
+      .main-message {
+        font-family: "Cinzel Decorative", "Cinzel", serif;
+        font-size: clamp(2rem, 5vw, 4.5rem);
+        font-weight: 700;
+        color: #c0392b;
+        text-align: center;
+        line-height: 1.15;
+        max-width: 80vw;
+        text-shadow:
+          0 0 20px rgba(192, 57, 43, 0.8),
+          0 0 40px rgba(192, 57, 43, 0.5),
+          0 0 80px rgba(192, 57, 43, 0.3),
+          2px 2px 4px rgba(0, 0, 0, 0.9);
+        letter-spacing: 0.05em;
+        white-space: pre-line;
+      }
+
+      .shame-details {
+        font-family: "Cinzel", serif;
+        font-size: clamp(0.8rem, 1.5vw, 1.1rem);
+        font-weight: 400;
+        color: #8b6914;
+        letter-spacing: 0.2em;
+        text-align: center;
+        animation: fadeSlideIn 1.6s ease-out 0.4s forwards;
+        opacity: 0;
+      }
+
+      .separator {
+        width: 300px;
+        height: 1px;
+        background: linear-gradient(
+          to right,
+          transparent,
+          #8b0000 30%,
+          #8b0000 70%,
+          transparent
+        );
+        opacity: 0.6;
+        animation: fadeSlideIn 1.6s ease-out 0.6s forwards;
+      }
+
+      .dismiss-btn {
+        font-family: "Cinzel", serif;
+        font-size: clamp(0.9rem, 1.8vw, 1.2rem);
+        font-weight: 400;
+        color: #d4aa70;
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        letter-spacing: 0.25em;
+        text-transform: uppercase;
+        padding: 0.8rem 2rem;
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        transition: all 0.3s ease;
+        animation: fadeSlideIn 1.6s ease-out 1.2s forwards;
+        opacity: 0;
+        position: relative;
+      }
+
+      .dismiss-btn::before {
+        content: "▶";
+        font-size: 0.7em;
+        opacity: 0;
+        transform: translateX(-8px);
+        transition: all 0.3s ease;
+      }
+
+      .dismiss-btn:hover {
+        color: #f0c060;
+        text-shadow:
+          0 0 15px rgba(212, 170, 112, 0.9),
+          0 0 30px rgba(212, 170, 112, 0.5);
+        letter-spacing: 0.3em;
+      }
+
+      .dismiss-btn:hover::before {
+        opacity: 1;
+        transform: translateX(0);
+      }
+
+      /* Falling petals */
+      .petals-container {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 0;
+        overflow: hidden;
+      }
+
+      .petal {
+        position: absolute;
+        top: -5%;
+        font-size: 1.2rem;
+        animation: fallPetal linear infinite;
+        opacity: 0;
+      }
+
+      @keyframes fallPetal {
+        0% {
+          opacity: 0;
+          transform: translateY(0) translateX(0) rotate(0deg);
+        }
+        10% {
+          opacity: 0.7;
+        }
+        90% {
+          opacity: 0.4;
+        }
+        100% {
+          opacity: 0;
+          transform: translateY(110vh) translateX(var(--drift))
+            rotate(var(--spin));
+        }
+      }
+
+      /* Scanline effect for atmosphere */
+      .scanlines {
+        position: fixed;
+        inset: 0;
+        background: repeating-linear-gradient(
+          0deg,
+          transparent,
+          transparent 2px,
+          rgba(0, 0, 0, 0.05) 2px,
+          rgba(0, 0, 0, 0.05) 4px
+        );
+        pointer-events: none;
+        z-index: 3;
+        opacity: 0.4;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="overlay">
+      <div class="petals-container" id="petals"></div>
+      <div class="scanlines"></div>
+
+      <div class="content">
+        <div class="label-top">⚔ P R I S O N ⚔</div>
+        <div class="main-message" id="mainMessage">YOU HAVE PR DEBT</div>
+        <div class="separator"></div>
+        <div class="shame-details" id="shameDetails">Loading your shame...</div>
+        <div class="separator"></div>
+        <button class="dismiss-btn" id="dismissBtn">I Promise To Review</button>
+      </div>
+    </div>
+
+    <script nonce="{{NONCE}}">
+      const vscode = acquireVsCodeApi();
+
+      window.addEventListener("message", (event) => {
+        const msg = event.data;
+        if (msg.type === "init") {
+          document.getElementById("mainMessage").textContent = msg.message;
+          document.getElementById("shameDetails").textContent = msg.details;
+        }
+      });
+
+      document.getElementById("dismissBtn").addEventListener("click", () => {
+        vscode.postMessage({ type: "dismiss" });
+      });
+
+      function spawnPetals() {
+        const container = document.getElementById("petals");
+        const symbols = ["🥀", "🥀", "🥀", "💀", "🥀", "🥀"];
+        const count = 18;
+
+        for (let i = 0; i < count; i++) {
+          const petal = document.createElement("div");
+          petal.classList.add("petal");
+          petal.textContent =
+            symbols[Math.floor(Math.random() * symbols.length)];
+
+          const left = Math.random() * 100;
+          const duration = 6 + Math.random() * 10;
+          const delay = Math.random() * 12;
+          const drift = (Math.random() - 0.5) * 120;
+          const spin = Math.random() * 360;
+
+          petal.style.cssText = `
+          left: ${left}%;
+          animation-duration: ${duration}s;
+          animation-delay: ${delay}s;
+          --drift: ${drift}px;
+          --spin: ${spin}deg;
+          font-size: ${0.8 + Math.random() * 0.8}rem;
+        `;
+
+          container.appendChild(petal);
+        }
+      }
+
+      spawnPetals();
+    </script>
+  </body>
+</html>

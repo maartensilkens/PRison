@@ -1,6 +1,7 @@
 import { ShameReport } from "../shame/types";
 import { getPRAgeDays } from "../github/api";
 import { PRInfo } from "../github/types";
+import { ownPRsNeedingAction } from "../shame/engine";
 
 type MessageTrigger = "branch_checkout" | "startup" | "boss_slain";
 
@@ -15,7 +16,7 @@ const BRANCH_CHECKOUT_MESSAGES = [
   "This PR is cooked 💀",
   "POV: You tried to code with open comments 😭",
   "AI Slop detected. Resolve comments before generating more tech debt 🤖",
-  "Bro really thought he could code with {{count}} unresolved threads 😂",
+  "Bro really thought he could code with {{count}} unresolved comments 😂",
   "New branch? In THIS economy? 📉",
   "{{count}} PRs in the mud. No cap. 🧢",
   "Your PR #{{pr}} has been open for {{days}} days. That's not a PR, that's a fossil 🦴",
@@ -34,12 +35,43 @@ const BRANCH_CHECKOUT_MESSAGES = [
   "Bestie... your PR queue called. It's not okay 😔",
   "No cap fr fr your PRs are unalived 🥀",
   "Caught in 4K opening a new branch with {{count}} reviews pending 📸",
-  "The villain arc continues. {{count}} unresolved threads. 🦹",
+  "The villain arc continues. {{count}} unresolved comments. 🦹",
   "Delulu behavior detected: thinking you can ship new code rn 💅",
   "POV: Your teammates seeing you open another PR while theirs rot 👀",
   "This ain't it chief. Review something first. 💀",
   "Lowkey unhinged to start new work with {{count}} PRs aging like milk 🥛",
   "The pipeline said no. PRison said no. The vibes said no. ❌",
+  "NPC behavior: opening new branch, ignoring {{count}} open PRs 🤖",
+  "Brain rot speedrun any% — {{count}} open PRs untouched 🧠",
+  "The ick: {{count}} unresolved comments and you started a new branch 🤮",
+  "Understood the assignment and chose to ignore it 🙈",
+  "Ratio: {{count}} unresolved PR comments, 0 reviews done 📊",
+  "Periodt. You are NOT coding right now. Review first. 💅",
+  "Rent free: {{count}} PRs living in the queue while you touch new files 🏠",
+  "That's crazy bestie. PR #{{pr}} has been open {{days}} days 😭",
+  "Chronically online, never in the PR queue. Ironic. 💻",
+  "Era check: you are in your procrastination era. Not a vibe. 📅",
+  "Touch grass. Touch the review queue. Literally anything else. 🌿",
+  "Going through a mid arc. {{count}} PRs, zero reviews. 📉",
+  "Not a single braincell went into reviewing before branching 🫠",
+  "The audacity jumped different today fr fr. {{count}} PRs in the queue 😤",
+  "Unwell behavior: {{days}} days without resolving a single comment 💊",
+  "It's giving... someone who mutes their GitHub notifications 📵",
+  "PR #{{pr}} did NOT understand the assignment. Neither did you by ignoring it. 💀",
+  "Gatekeeping code reviews from your teammates is NOT the move 🚫",
+  "POV: your teammates watching you open a new branch while their PRs ghost 👻",
+  "Zero rizz in the review queue. Absolute L. 💀",
+  "Your aura is cooked. {{count}} open PRs will do that to you 🥀",
+  "PR maxxing? More like PR avoiding. Embarrassing. 😭",
+  "Actually based behavior would be reviewing something first fr 🙏",
+  "You are NOT mogging anyone with {{count}} unresolved comments bestie 💀",
+  "Lost all aura points. {{count}} PRs rotting. Log off. 📉",
+  "The moggers review PRs. The mogged have {{count}} open. Guess which one you are 😂",
+  "Truly zero rizz. PR #{{pr}} has been open {{days}} days and you're HERE 🤡",
+  "Based would be clearing the queue. This? Not based. This is cowardice. 🐔",
+  "PR maxxing arc incoming... just kidding you're avoiding it fr fr 💀",
+  "Bro thinks he's mogging the team while sitting on {{count}} open reviews 😭",
+  "Aura diff. Theirs: waiting for your review. Yours: opening new branches. 📉",
 ];
 
 const STARTUP_MESSAGES = [
@@ -64,25 +96,20 @@ const MAX_RECENT = 3;
 function interpolate(template: string, context: MessageContext): string {
   const { report, pr } = context;
 
+  const candidatePRs = [
+    ...ownPRsNeedingAction(report.myOpenPRs),
+    ...report.pendingReviews,
+  ];
   const worstPR =
     pr ??
-    report.myOpenPRs.reduce<PRInfo | null>((worst, curr) => {
+    candidatePRs.reduce<PRInfo | null>((worst, curr) => {
       if (!worst) return curr;
       return getPRAgeDays(curr) > getPRAgeDays(worst) ? curr : worst;
     }, null);
 
   return template
     .replace(/\{\{pr\}\}/g, worstPR ? String(worstPR.number) : "??")
-    .replace(
-      /\{\{count\}\}/g,
-      String(
-        Math.max(
-          report.myOpenPRs.length,
-          report.pendingReviews.length,
-          report.totalUnresolvedThreads,
-        ),
-      ),
-    )
+    .replace(/\{\{count\}\}/g, String(report.attentionCount))
     .replace(/\{\{days\}\}/g, worstPR ? String(getPRAgeDays(worstPR)) : "??")
     .replace(/\{\{author\}\}/g, worstPR?.author ?? "you");
 }

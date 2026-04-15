@@ -8,6 +8,8 @@ export interface PRInfo {
   unresolvedThreads: number;
   isDraft: boolean;
   reviewState?: "APPROVED" | "CHANGES_REQUESTED" | "PENDING";
+  myReviewState?: "APPROVED" | "CHANGES_REQUESTED";
+  approvals: number;
 }
 
 export interface ReviewRequest {
