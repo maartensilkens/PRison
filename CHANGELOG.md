@@ -1,10 +1,20 @@
 # Changelog
 
-## [0.1.0] - Initial Release
+## [1.0.2] - 2026-04-15
+
+### Changed
+- Updated changelog to reflect actual release history
+
+## [1.0.1] - 2026-04-15
+
+### Fixed
+- Repository URL in package.json pointing to wrong GitHub repo
+
+## [1.0.0] - 2026-04-15
 
 ### Added
-- Dark Souls "YOU DIED" style full-screen shame overlay with Gen Z meme messages
-- Shame triggers at 2+ PRs needing attention (own PRs with issues + pending reviews combined)
+- Full-screen shame overlay with meme messages when PRs need attention
+- Shame triggers at 1+ PRs needing attention (own PRs with issues + pending reviews)
 - Branch checkout and terminal open detection triggers overlay
 - Status bar counter showing total PRs needing attention
 - PR sidebar with three collapsible sections: Your Open PRs, Not Reviewed by You, Reviewed / Approved

@@ -1,8 +1,8 @@
 {
   "name": "prison",
   "displayName": "PRison",
-  "description": "Your PRs are in prison. Only YOU can set them free. 🔒",
-  "version": "1.0.1",
+  "description": "Can't leave your team hanging with all these open PRs. 🔒",
+  "version": "1.0.2",
   "publisher": "MaartenSilkens",
   "license": "MIT",
   "engines": {
@@ -114,7 +114,7 @@
         "prison.blockTerminal": {
           "type": "boolean",
           "default": true,
-          "description": "Show shame overlay every time you open a terminal while you have 2+ PRs needing attention 💀"
+          "description": "Show shame overlay every time you open a terminal while you have open PRs needing attention 💀"
         },
         "prison.requiredApprovals": {
           "type": "number",
