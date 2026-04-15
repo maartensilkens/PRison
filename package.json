@@ -4,6 +4,7 @@
   "description": "Your PRs are in prison. Only YOU can set them free. 🔒",
   "version": "1.0.0",
   "publisher": "MaartenSilkens",
+  "license": "MIT",
   "engines": {
     "vscode": "^1.85.0"
   },
